@@ -4,6 +4,7 @@ import (
 	"github.com/pycnick/proxy/internal/proxy/models"
 	"github.com/google/uuid"
 	"net"
+	"net/http"
 )
 
 type Repository interface {
@@ -12,5 +13,5 @@ type Repository interface {
 	ReadAll() ([]*models.HttpRequest, error)
 
 	CreateTcpConnection(host string) (net.Conn, error)
-	SendHttpRequest(httpRequest *models.HttpRequest) (*models.HttpResponse, error)
+	SendHttpRequest(httpRequest *http.Request) (*http.Response, error)
 }

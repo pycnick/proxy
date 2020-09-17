@@ -42,5 +42,5 @@ func main() {
 	personsUseCase := usecase.NewProxyUseCase(logger, personRepository)
 	_ = delivery.NewHttpDelivery(echo, logger, personsUseCase)
 
-	logger.Debug(echo.StartTLS(port, "certs/localhost.crt", "certs/localhost.key"))
+	logger.Debug(echo.Start(port))
 }

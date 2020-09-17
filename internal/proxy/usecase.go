@@ -4,11 +4,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/pycnick/proxy/internal/proxy/models"
 	"net"
+	"net/http"
 )
 
 type UseCase interface {
-	HandleRequest(httpRequest *models.HttpRequest) (*models.HttpResponse, error)
-	HandleHttpsTunnel(httpRequest *models.HttpRequest, clientConn net.Conn) error
+	HandleRequest(httpRequest *http.Request) (*http.Response, error)
+	HandleHttpsConn(clientConn net.Conn, connectReq *http.Request) error
 	RepeatRequest(ID uuid.UUID) (*models.HttpResponse, error)
 	GetHistory() ([]*models.HttpRequest, error)
 }

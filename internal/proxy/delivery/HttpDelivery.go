@@ -1,12 +1,12 @@
 package delivery
 
 import (
+	"bytes"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/pycnick/proxy/internal/proxy"
-	"github.com/pycnick/proxy/internal/proxy/models"
 	"github.com/sirupsen/logrus"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 )
@@ -39,48 +39,22 @@ func NewHttpDelivery(e *echo.Echo, log *logrus.Logger, pUC proxy.UseCase) *HttpD
 }
 
 func (hD *HttpDelivery) Proxy(c echo.Context) error {
-	requestBody, err := ioutil.ReadAll(c.Request().Body)
-	if err != nil {
-		logrus.Debug(err)
-	}
-
-	request := &models.HttpRequest{
-		Method:  c.Request().Method,
-		Schema:  "http://",
-		Host:    c.Request().URL.Host,
-		Path:    c.Request().URL.Path,
-		Headers: c.Request().Header,
-		Body:    string(requestBody),
-	}
-
-	response, err := hD.pUC.HandleRequest(request)
+	response, err := hD.pUC.HandleRequest(c.Request())
 	if err != nil {
 		return c.String(http.StatusInternalServerError, "")
 	}
 
-	for key, value := range response.Headers {
+	for key, value := range response.Header {
 		c.Response().Header().Set(key, strings.Join(value, ","))
 	}
 
-	return c.String(response.Status, response.Body)
+	buf := new(bytes.Buffer)
+	io.Copy(buf, response.Body)
+	return c.String(response.StatusCode, buf.String())
 }
 
 func (hD *HttpDelivery) ProxyTunnel(c echo.Context) error {
 	c.String(http.StatusOK, "")
-
-	requestBody, err := ioutil.ReadAll(c.Request().Body)
-	if err != nil {
-		logrus.Debug(err)
-	}
-
-	request := &models.HttpRequest{
-		Method:  c.Request().Method,
-		Schema:  "https://",
-		Host:    c.Request().URL.Host,
-		Path:    c.Request().URL.Path,
-		Headers: c.Request().Header,
-		Body:    string(requestBody),
-	}
 
 	clientConn, _, err := c.Response().Hijack()
 	if err != nil {
@@ -88,9 +62,8 @@ func (hD *HttpDelivery) ProxyTunnel(c echo.Context) error {
 		return err
 	}
 
-	if err := hD.pUC.HandleHttpsTunnel(request, clientConn); err != nil {
+	if err := hD.pUC.HandleHttpsConn(clientConn, c.Request()); err != nil {
 		hD.log.Error(err)
-		return err
 	}
 
 	return nil

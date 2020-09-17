@@ -6,10 +6,8 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pycnick/proxy/internal/proxy/models"
 	"github.com/sirupsen/logrus"
-	"io/ioutil"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -86,15 +84,13 @@ func (pR *ProxyRepository) ReadByID(ID uuid.UUID) (*models.HttpRequest, error) {
 	return httpRequest, nil
 }
 
-func (pR *ProxyRepository) SendHttpRequest(httpRequest *models.HttpRequest) (*models.HttpResponse, error) {
-	r := strings.NewReader(httpRequest.Body)
-	url := httpRequest.Schema + httpRequest.Host + httpRequest.Path
-	request, err := http.NewRequest(httpRequest.Method, url, r)
+func (pR *ProxyRepository) SendHttpRequest(httpRequest *http.Request) (*http.Response, error) {
+	request, err := http.NewRequest(httpRequest.Method, httpRequest.URL.Scheme + httpRequest.URL.Host + httpRequest.URL.Path, httpRequest.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	request.Header = httpRequest.Headers
+	request.Header = httpRequest.Header
 
 	client := &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -106,16 +102,7 @@ func (pR *ProxyRepository) SendHttpRequest(httpRequest *models.HttpRequest) (*mo
 		return nil, err
 	}
 
-	responseBody, err := ioutil.ReadAll(response.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	return &models.HttpResponse{
-		Status:  response.StatusCode,
-		Headers: response.Header,
-		Body:    string(responseBody),
-	}, nil
+	return response, nil
 }
 
 func (pR *ProxyRepository) CreateTcpConnection(host string) (net.Conn, error) {
