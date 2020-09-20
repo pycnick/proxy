@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"crypto/tls"
 	"github.com/pycnick/proxy/internal/proxy/models"
 	"github.com/google/uuid"
 	"net"
@@ -14,4 +15,5 @@ type Repository interface {
 
 	CreateTcpConnection(host string) (net.Conn, error)
 	SendHttpRequest(httpRequest *http.Request) (*http.Response, error)
+	GetHttpsConnection(host string) (*tls.Conn, error)
 }

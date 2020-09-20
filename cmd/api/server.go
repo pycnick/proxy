@@ -39,7 +39,7 @@ func main() {
 	}))
 
 	personRepository := repository.NewProxyRepository(logger, connPool)
-	personsUseCase := usecase.NewProxyUseCase(logger, personRepository)
+	personsUseCase, _ := usecase.NewProxyUseCase(logger, personRepository)
 	_ = delivery.NewHttpDelivery(echo, logger, personsUseCase)
 
 	logger.Debug(echo.Start(port))

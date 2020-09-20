@@ -1,13 +1,23 @@
 package repository
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"github.com/pycnick/proxy/internal/proxy/models"
 	"github.com/sirupsen/logrus"
+	"io/ioutil"
+	"log"
+	"math/big"
 	"net"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -85,7 +95,7 @@ func (pR *ProxyRepository) ReadByID(ID uuid.UUID) (*models.HttpRequest, error) {
 }
 
 func (pR *ProxyRepository) SendHttpRequest(httpRequest *http.Request) (*http.Response, error) {
-	request, err := http.NewRequest(httpRequest.Method, httpRequest.URL.Scheme + httpRequest.URL.Host + httpRequest.URL.Path, httpRequest.Body)
+	request, err := http.NewRequest(httpRequest.Method, httpRequest.URL.String(), httpRequest.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -103,6 +113,69 @@ func (pR *ProxyRepository) SendHttpRequest(httpRequest *http.Request) (*http.Res
 	}
 
 	return response, nil
+}
+
+func (pR *ProxyRepository) GetHttpsConnection(host string) (*tls.Conn, error) {
+	file, err := os.Open("./certs/ca.key")
+	if err != nil {
+		pR.log.Error(err)
+		return nil, err
+	}
+
+	b, err := ioutil.ReadAll(file)
+	if err != nil {
+		pR.log.Error(err)
+		return nil, err
+	}
+
+	privPem, _ := pem.Decode(b)
+	if privPem.Type != "RSA PRIVATE KEY" {
+		pR.log.Error("RSA private key is of the wrong type", privPem.Type)
+	}
+
+	priv, err := x509.ParsePKCS1PrivateKey(privPem.Bytes)
+	if err != nil {
+		pR.log.Error(err)
+		return nil, err
+	}
+
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			Organization: []string{host},
+		},
+		NotBefore: time.Now(),
+		NotAfter:  time.Now().Add(time.Hour * 24 * 180),
+
+		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	if err != nil {
+		log.Fatalf("Failed to create certificate: %s", err)
+	}
+
+	// pem encode
+	caPEM := new(bytes.Buffer)
+	pem.Encode(caPEM, &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: derBytes,
+	})
+	cert, err := tls.X509KeyPair(caPEM.Bytes(), b)
+	conf := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		//InsecureSkipVerify: true,
+	}
+
+	conn, err := tls.Dial("tcp", host, conf)
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+
+	return conn, nil
 }
 
 func (pR *ProxyRepository) CreateTcpConnection(host string) (net.Conn, error) {

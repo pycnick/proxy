@@ -100,3 +100,18 @@ func (hD *HttpDelivery) SendRequest(c echo.Context) error {
 
 	return c.String(response.Status, response.Body)
 }
+
+//func (hD *HttpDelivery) ParmMine(c echo.Context) error {
+//	requestID := c.Param("id")
+//	if requestID == "" {
+//		return c.String(http.StatusBadRequest, "")
+//	}
+//
+//	requestUUID, err := uuid.Parse(requestID)
+//	if err != nil {
+//		return c.String(http.StatusBadRequest, "")
+//	}
+//
+//
+//
+//}
