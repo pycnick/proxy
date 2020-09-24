@@ -12,4 +12,5 @@ type UseCase interface {
 	HandleHttpsConn(clientConn net.Conn, connectReq *http.Request) error
 	RepeatRequest(ID uuid.UUID) (*models.HttpResponse, error)
 	GetHistory() ([]*models.HttpRequest, error)
+	ParamsSecurityCheck(ID uuid.UUID) (map[string]string, error)
 }

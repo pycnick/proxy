@@ -17,21 +17,13 @@ func main() {
 	logger := logrus.New()
 	logger.SetOutput(os.Stdout)
 
-	proxyPort := os.Getenv("PROXY_PORT")
-	if proxyPort == "" {
-		logger.Debug("No PROXY_PORT env...")
-		proxyPort = "8080"
+	port := os.Getenv("PORT")
+	if port == "" {
+		logger.Debug("No PORT env...")
+		port = "8080"
 	}
 
-	proxyPort = ":" + proxyPort
-
-	repeaterPort := os.Getenv("REPEATER_PORT")
-	if repeaterPort == "" {
-		logger.Debug("No REPEATER_PORT env...")
-		repeaterPort = "8081"
-	}
-
-	repeaterPort = ":" + repeaterPort
+	port = ":" + port
 
 	connector := connector.NewPostgresConnector()
 	connPool, err := connector.Connect()
@@ -51,18 +43,20 @@ func main() {
 	personsUseCase, _ := usecase.NewProxyUseCase(logger, personRepository)
 	personsDelivery := delivery.NewHttpDelivery(proxyServer, logger, personsUseCase)
 
-	repeaterServer := echo.New()
-	repeaterServer.POST("/repeat/:id", personsDelivery.SendRequest)
+	repeater := echo.New()
+	repeater.POST("/repeat/:id", personsDelivery.SendRequest)
+	repeater.GET("/secure/:id", personsDelivery.ParmMine)
 
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
+
 	go func() {
-		logger.Debug(proxyServer.Start(proxyPort))
+		logger.Debug(proxyServer.Start(port))
 		wg.Done()
 	}()
 
-	go func() {
-		logger.Debug(repeaterServer.Start(repeaterPort))
+	go func () {
+		logger.Debug(repeater.Start(":8081"))
 		wg.Done()
 	}()
 

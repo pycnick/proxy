@@ -4,14 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
 	"github.com/pycnick/proxy/internal/proxy"
 	"github.com/pycnick/proxy/internal/proxy/models"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/crypto/acme/autocert"
 	"github.com/tjarratt/babble"
+	"golang.org/x/crypto/acme/autocert"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -174,16 +173,11 @@ func (pUC *ProxyUseCase) HandleHttpsConn(clientConn net.Conn, connectReq *http.R
 		pUC.log.Error(err)
 		return err
 	}
-	//
-	//m := &autocert.Manager{
-	//	Prompt: autocert.AcceptTOS,
-	//	HostPolicy: nil,
-	//}
 
 	tlsConn := tls.Server(clientConn, &tls.Config{
 		Certificates: []tls.Certificate{cert},
 	})
-	_ = tlsConn.Handshake()
+	err = tlsConn.Handshake()
 
 	c := make(chan bool)
 	go func() {
@@ -242,36 +236,51 @@ func (pUC *ProxyUseCase) ParamsSecurityCheck(ID uuid.UUID) (map[string]string, e
 		return nil, err
 	}
 
-	b := babble.NewBabbler()
-	res := make(map[string]string)
-	for _, word := range pUC.checkParams {
-		go func() {
-			randomWord := b.Babble()
-			param := "?" + word + "=" + randomWord
+	secureParams := make(map[string]string)
 
+	b := babble.NewBabbler()
+	b.Count = 1
+
+	wg := &sync.WaitGroup{}
+	mu := &sync.Mutex{}
+	for ind, currWord := range pUC.checkParams {
+		pUC.log.Error(ind)
+		wg.Add(1)
+		word := currWord
+		go func() {
+			randParamValue := b.Babble()
 			response, err := pUC.pR.SendHttpRequest(&http.Request{
 				Method: request.Method,
 				URL: &url.URL{
 					Scheme: request.Schema,
 					Host:   request.Host,
-					Path:   request.Path + param,
+					Path:   request.Path + "?" + word + "=" + randParamValue,
 				},
 				Header: request.Headers,
 				Body:   ioutil.NopCloser(strings.NewReader(request.Body)),
 				Host:   request.Host,
 			})
 
-			stringResponse, err := json.Marshal(response)
 			if err != nil {
+				pUC.log.Error(err)
+				return
+			}
+
+			buf := new(bytes.Buffer)
+			if err := response.Write(buf); err != nil {
 				pUC.log.Error(err)
 			}
 
-			if strings.Contains(string(stringResponse), randomWord) {
-				pUC.log.Debug(param)
-				res[word] = randomWord
+			if strings.Contains(buf.String(), randParamValue) {
+				mu.Lock()
+				secureParams[word] = randParamValue
+				mu.Unlock()
 			}
+			wg.Done()
 		}()
 	}
 
-	return res, nil
+	wg.Wait()
+
+	return secureParams, nil
 }
