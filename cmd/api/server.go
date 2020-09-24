@@ -10,19 +10,28 @@ import (
 	"github.com/pycnick/proxy/internal/proxy/usecase"
 	"github.com/sirupsen/logrus"
 	"os"
+	"sync"
 )
 
 func main() {
 	logger := logrus.New()
 	logger.SetOutput(os.Stdout)
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		logger.Debug("No PORT env...")
-		port = "8080"
+	proxyPort := os.Getenv("PROXY_PORT")
+	if proxyPort == "" {
+		logger.Debug("No PROXY_PORT env...")
+		proxyPort = "8080"
 	}
 
-	port = ":" + port
+	proxyPort = ":" + proxyPort
+
+	repeaterPort := os.Getenv("REPEATER_PORT")
+	if repeaterPort == "" {
+		logger.Debug("No REPEATER_PORT env...")
+		repeaterPort = "8081"
+	}
+
+	repeaterPort = ":" + repeaterPort
 
 	connector := connector.NewPostgresConnector()
 	connPool, err := connector.Connect()
@@ -32,15 +41,30 @@ func main() {
 		return
 	}
 
-	echo := echo.New()
+	proxyServer := echo.New()
 
-	echo.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
+	proxyServer.Use(middleware.LoggerWithConfig(middleware.LoggerConfig{
 		Format: "method=${method}, uri=${uri}, status=${status}\n",
 	}))
 
 	personRepository := repository.NewProxyRepository(logger, connPool)
 	personsUseCase, _ := usecase.NewProxyUseCase(logger, personRepository)
-	_ = delivery.NewHttpDelivery(echo, logger, personsUseCase)
+	personsDelivery := delivery.NewHttpDelivery(proxyServer, logger, personsUseCase)
 
-	logger.Debug(echo.Start(port))
+	repeaterServer := echo.New()
+	repeaterServer.POST("/repeat/:id", personsDelivery.SendRequest)
+
+	wg := &sync.WaitGroup{}
+	wg.Add(2)
+	go func() {
+		logger.Debug(proxyServer.Start(proxyPort))
+		wg.Done()
+	}()
+
+	go func() {
+		logger.Debug(repeaterServer.Start(repeaterPort))
+		wg.Done()
+	}()
+
+	wg.Wait()
 }
