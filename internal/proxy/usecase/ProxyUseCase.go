@@ -9,6 +9,7 @@ import (
 	"github.com/pycnick/proxy/internal/proxy"
 	"github.com/pycnick/proxy/internal/proxy/models"
 	"github.com/sirupsen/logrus"
+	"github.com/tjarratt/babble"
 	"golang.org/x/crypto/acme/autocert"
 	"io"
 	"io/ioutil"
@@ -229,25 +230,57 @@ func (pUC *ProxyUseCase) RepeatRequest(ID uuid.UUID) (*models.HttpResponse, erro
 	}, nil
 }
 
-//func (pUC *ProxyUseCase) ParamsSecurityCheck(ID uuid.UUID) (map[string]string, error) {
-//	request, err := pUC.pR.ReadByID(ID)
-//	if err != nil {
-//		return nil, err
-//	}
-//
-//	for _, word := range pUC.checkParams {
-//		response, err := pUC.pR.SendHttpRequest(&http.Request{
-//			Method: request.Method,
-//			URL: &url.URL{
-//				Scheme: request.Schema,
-//				Host:   request.Host,
-//				Path:   request.Path + "?param=" + word,
-//			},
-//			Header: request.Headers,
-//			Body:   ioutil.NopCloser(strings.NewReader(request.Body)),
-//			Host:   request.Host,
-//		})
-//
-//		if response.
-//	}
-//}
+func (pUC *ProxyUseCase) ParamsSecurityCheck(ID uuid.UUID) (map[string]string, error) {
+	request, err := pUC.pR.ReadByID(ID)
+	if err != nil {
+		return nil, err
+	}
+
+	secureParams := make(map[string]string)
+
+	b := babble.NewBabbler()
+	b.Count = 1
+
+	wg := &sync.WaitGroup{}
+	mu := &sync.Mutex{}
+	for ind, currWord := range pUC.checkParams {
+		pUC.log.Error(ind)
+		wg.Add(1)
+		word := currWord
+		go func() {
+			randParamValue := b.Babble()
+			response, err := pUC.pR.SendHttpRequest(&http.Request{
+				Method: request.Method,
+				URL: &url.URL{
+					Scheme: request.Schema,
+					Host:   request.Host,
+					Path:   request.Path + "?" + word + "=" + randParamValue,
+				},
+				Header: request.Headers,
+				Body:   ioutil.NopCloser(strings.NewReader(request.Body)),
+				Host:   request.Host,
+			})
+
+			if err != nil {
+				pUC.log.Error(err)
+				return
+			}
+
+			buf := new(bytes.Buffer)
+			if err := response.Write(buf); err != nil {
+				pUC.log.Error(err)
+			}
+
+			if strings.Contains(buf.String(), randParamValue) {
+				mu.Lock()
+				secureParams[word] = randParamValue
+				mu.Unlock()
+			}
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+
+	return secureParams, nil
+}

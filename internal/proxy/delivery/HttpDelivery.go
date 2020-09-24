@@ -34,7 +34,6 @@ func NewHttpDelivery(e *echo.Echo, log *logrus.Logger, pUC proxy.UseCase) *HttpD
 	e.CONNECT("", hD.ProxyTunnel)
 
 	e.GET("/requests", hD.GetAllRequestsHistory)
-	e.POST("/requests/:id", hD.SendRequest)
 	return hD
 }
 
@@ -101,17 +100,26 @@ func (hD *HttpDelivery) SendRequest(c echo.Context) error {
 	return c.String(response.Status, response.Body)
 }
 
-//func (hD *HttpDelivery) ParmMine(c echo.Context) error {
-//	requestID := c.Param("id")
-//	if requestID == "" {
-//		return c.String(http.StatusBadRequest, "")
-//	}
-//
-//	requestUUID, err := uuid.Parse(requestID)
-//	if err != nil {
-//		return c.String(http.StatusBadRequest, "")
-//	}
-//
-//
-//
-//}
+func (hD *HttpDelivery) ParmMine(c echo.Context) error {
+	requestID := c.Param("id")
+	if requestID == "" {
+		return c.String(http.StatusBadRequest, "")
+	}
+
+	requestUUID, err := uuid.Parse(requestID)
+	if err != nil {
+		return c.String(http.StatusBadRequest, "")
+	}
+
+	secureMap, err := hD.pUC.ParamsSecurityCheck(requestUUID)
+	if err != nil {
+		return c.String(http.StatusInternalServerError, "server error")
+	}
+
+	if len(secureMap) != 0 {
+		return c.JSON(http.StatusOK, secureMap)
+	}
+
+	return c.String(http.StatusOK, "insecure params not found")
+
+}
