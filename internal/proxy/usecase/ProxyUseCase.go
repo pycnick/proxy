@@ -241,44 +241,68 @@ func (pUC *ProxyUseCase) ParamsSecurityCheck(ID uuid.UUID) (map[string]string, e
 	b := babble.NewBabbler()
 	b.Count = 1
 
+	r := &http.Request{
+		Method: request.Method,
+		URL: &url.URL{
+			Scheme: request.Schema,
+			Host:   request.Host,
+			Path:   request.Path,
+		},
+		Header: request.Headers,
+		Body:   ioutil.NopCloser(strings.NewReader(request.Body)),
+		Host:   request.Host,
+	}
+
+	paramsChannel := make(chan string, 20)
+
 	wg := &sync.WaitGroup{}
 	mu := &sync.Mutex{}
-	for ind, currWord := range pUC.checkParams {
-		pUC.log.Error(ind)
+
+	countWorkers := 10
+
+	for i := 0; i < countWorkers; i++ {
 		wg.Add(1)
-		word := currWord
-		go func() {
-			randParamValue := b.Babble()
-			response, err := pUC.pR.SendHttpRequest(&http.Request{
-				Method: request.Method,
-				URL: &url.URL{
-					Scheme: request.Schema,
-					Host:   request.Host,
-					Path:   request.Path + "?" + word + "=" + randParamValue,
-				},
-				Header: request.Headers,
-				Body:   ioutil.NopCloser(strings.NewReader(request.Body)),
-				Host:   request.Host,
-			})
+		go func(request http.Request) {
+			for {
+				param, ok := <-paramsChannel
+				if !ok {
+					pUC.log.Error("close goroutine")
+					break
+				}
+				randParamValue := b.Babble()
 
-			if err != nil {
-				pUC.log.Error(err)
-				return
+				req := *r
+				req.URL.Query().Add(param, randParamValue)
+
+				response, err := pUC.pR.SendHttpRequest(&req)
+
+				if err != nil {
+					continue
+				}
+
+				buf := new(bytes.Buffer)
+				if err := response.Write(buf); err != nil {
+					pUC.log.Error(err)
+				}
+				pUC.log.Debug(buf.String())
+
+				if strings.Contains(buf.String(), randParamValue) {
+					mu.Lock()
+					secureParams[param] = randParamValue
+					mu.Unlock()
+				}
 			}
 
-			buf := new(bytes.Buffer)
-			if err := response.Write(buf); err != nil {
-				pUC.log.Error(err)
-			}
-
-			if strings.Contains(buf.String(), randParamValue) {
-				mu.Lock()
-				secureParams[word] = randParamValue
-				mu.Unlock()
-			}
 			wg.Done()
-		}()
+		}(*r)
 	}
+
+
+
+	for _, param := range pUC.checkParams {
+		paramsChannel <- param
+	}
+	close(paramsChannel)
 
 	wg.Wait()
 

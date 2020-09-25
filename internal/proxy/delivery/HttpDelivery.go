@@ -34,6 +34,9 @@ func NewHttpDelivery(e *echo.Echo, log *logrus.Logger, pUC proxy.UseCase) *HttpD
 	e.CONNECT("", hD.ProxyTunnel)
 
 	e.GET("/requests", hD.GetAllRequestsHistory)
+	e.POST("/repeat/:id", hD.SendRequest)
+
+	e.GET("/secure/:id", hD.ParmMine)
 	return hD
 }
 

@@ -10,7 +10,6 @@ import (
 	"github.com/pycnick/proxy/internal/proxy/usecase"
 	"github.com/sirupsen/logrus"
 	"os"
-	"sync"
 )
 
 func main() {
@@ -41,24 +40,7 @@ func main() {
 
 	personRepository := repository.NewProxyRepository(logger, connPool)
 	personsUseCase, _ := usecase.NewProxyUseCase(logger, personRepository)
-	personsDelivery := delivery.NewHttpDelivery(proxyServer, logger, personsUseCase)
+	_ = delivery.NewHttpDelivery(proxyServer, logger, personsUseCase)
 
-	repeater := echo.New()
-	repeater.POST("/repeat/:id", personsDelivery.SendRequest)
-	repeater.GET("/secure/:id", personsDelivery.ParmMine)
-
-	wg := &sync.WaitGroup{}
-	wg.Add(2)
-
-	go func() {
-		logger.Debug(proxyServer.Start(port))
-		wg.Done()
-	}()
-
-	go func () {
-		logger.Debug(repeater.Start(":8081"))
-		wg.Done()
-	}()
-
-	wg.Wait()
+	logger.Debug(proxyServer.Start(port))
 }
